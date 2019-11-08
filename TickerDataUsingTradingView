@@ -1,0 +1,90 @@
+BEGIN
+	DECLARE openPrice DECIMAL(32,8);
+	DECLARE closePrice DECIMAL(32,8);
+	DECLARE lastTimestamp INT(11);
+    SET lastTimestamp = UNIX_TIMESTAMP();
+    
+	SET @INDEX = '1';
+	DROP TEMPORARY TABLE IF EXISTS temp_ticker;
+	CREATE TEMPORARY TABLE temp_ticker(
+		`id` INT NOT NULL AUTO_INCREMENT primary key,
+		period int default 0,
+		timestamp int(11) default 0,
+        temp_pair varchar(255)
+	)engine=memory;
+	INSERT INTO temp_ticker(period, timestamp, temp_pair)
+	SELECT period, MAX(timestamp) as 'timestamp', pairId FROM ticker_data td WHERE td.pairId = pairId GROUP BY period;
+    
+    SELECT * FROM temp_ticker;
+    
+	WHILE @INDEX <= (SELECT count(*) FROM temp_ticker) do
+		SET @duration = (SELECT period FROM temp_ticker WHERE id = @INDEX AND temp_pair = pairId);
+		IF  (SELECT period + timestamp FROM temp_ticker WHERE id = @INDEX AND temp_pair = pairId) < (FLOOR(lastTimestamp/@duration) * @duration) OR
+			(SELECT count(*) FROM ticker_data td WHERE td.pairId = pairId AND td.period = @duration) < 1 THEN
+            SET @beginTime = (FLOOR(lastTimestamp/@duration) * @duration) - @duration;
+            SET openPrice = (SELECT t.price FROM trading t WHERE t.pairId = pairId AND t.created_at >= @beginTime ORDER BY t.created_at ASC LIMIT 1);
+            SET closePrice = (SELECT t.price FROM trading t WHERE t.pairId = pairId AND t.created_at >= @beginTime ORDER BY t.created_at DESC LIMIT 1);
+            INSERT INTO ticker_data(Period, PeriodNumber, PairId, Timestamp,Open, Close, High, Low, Volume, BaseVolume, EpochTime)
+			SELECT
+				@duration as Period,
+			    FLOOR(lastTimestamp/@duration) AS PeriodNumber,
+			    pairId AS PairId,
+			    (FLOOR(lastTimestamp/@duration) * @duration) AS 'Timestamp',
+				COALESCE(openPrice, 0) AS Open,
+				COALESCE(closePrice, 0) AS Close,
+				COALESCE(MAX(td.price),0) AS High,
+				COALESCE(MIN(td.price),0) AS Low,
+				COALESCE(SUM(td.total_quote),0) AS Volume,
+				COALESCE(SUM(td.total_base),0) AS BaseVolume,
+                lastTimestamp as EpochTime
+			FROM trading td
+			WHERE td.pairId = pairId
+				AND td.created_at >= @beginTime
+			LIMIT 1;
+		ELSE
+			SET @beginTime = (select timestamp from ticker_data where period = @duration AND pairId = pairId order by timestamp DESC limit 1) - @duration;
+            SET openPrice = (SELECT t.price FROM trading t WHERE t.pairId = pairId AND t.created_at >= @beginTime ORDER BY t.created_at ASC LIMIT 1);
+            SET closePrice = (SELECT t.price FROM trading t WHERE t.pairId = pairId AND t.created_at >= @beginTime ORDER BY t.created_at DESC LIMIT 1);
+            DROP TEMPORARY TABLE IF EXISTS else_ticker;
+            CREATE TEMPORARY TABLE else_ticker (
+				`Close` decimal(32,8) DEFAULT NULL,
+				`Open` decimal(32,8) DEFAULT NULL,
+				`Low` decimal(32,8) DEFAULT NULL,
+				`High` decimal(32,8) DEFAULT NULL,
+				`Volume` decimal(32,0) DEFAULT NULL,
+				`BaseVolume`decimal(32,0) DEFAULT NULL,
+                `PairId` int(11) DEFAULT 0
+            )engine=memory;
+            INSERT INTO else_ticker(Open, Close, Low, High, Volume, BaseVolume, PairId)
+			SELECT
+				COALESCE(openPrice, 0) AS Open,
+				COALESCE(closePrice, 0) AS Close,
+				COALESCE(MIN(td.price),0) AS Low,
+				COALESCE(MAX(td.price),0) AS High,
+				COALESCE(SUM(td.total_quote),0) AS Volume,
+				COALESCE(SUM(td.total_base),0) AS BaseVolume,
+                pairId
+			FROM trading td
+			WHERE td.pairId = pairId
+				AND td.created_at >= @beginTime
+			LIMIT 1;
+            SET SQL_SAFE_UPDATES = 0;
+            SELECT @e_open:= Open, @e_close := close, @e_high := high, @e_low := Low, @e_volume := volume, @e_basevolume := basevolume 
+            FROM else_ticker
+            WHERE PairId = pairId;
+			SELECT @temp_pair := temp_pair, @temp_period := period, @temp_stamp := timestamp FROM temp_ticker WHERE id = @INDEX AND temp_pair = pairId;
+            UPDATE ticker_data td SET
+				Close = @e_close,
+				Open = @e_open,
+                Low = @e_low,
+				High = @e_high,
+				Volume = @e_volume,
+				BaseVolume = ''+@e_basevolume
+            WHERE td.PairId = @temp_pair AND td.timestamp = @temp_stamp AND td.period = @temp_period;
+            SET SQL_SAFE_UPDATES = 1;
+            DROP TEMPORARY TABLE else_ticker;
+		END IF;
+        SET @INDEX = @INDEX + 1;
+	END WHILE;
+    DROP TEMPORARY TABLE temp_ticker;
+END
