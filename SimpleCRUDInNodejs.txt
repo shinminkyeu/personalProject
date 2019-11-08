@@ -1,0 +1,244 @@
+var mysql = require('mysql')
+var getDbConnection = function () {
+    var connection = mysql.createConnection({
+            host     : 'localhost',
+            user     : 'kio123',
+            password : 'kioAll123!@#',
+            port     : 3306,
+            database : 'db'
+        });
+        return connection;
+    }
+function sqlWhereMake(_obj) {
+    var keysParams = "";
+    var elements = [];
+    var keys = Object.keys(_obj);
+    for(var i = 0 ; i < keys.length; i++) {
+        keysParams += "`" + keys[i]+"`=?";
+        elements.push(_obj[keys[i]]);
+        if(i != (keys.length - 1)) {
+            keysParams += " AND";
+        }
+    }
+    return [keysParams, elements];
+}
+
+function sqlWhereMake2(_obj) {
+    var keysParams = "";
+    var elements = [];
+    var keys = Object.keys(_obj);
+    for(var i = 0 ; i < keys.length; i++) {
+        keysParams += "`" + keys[i]+"`=?";
+        elements.push(_obj[keys[i]]);
+        if(i != (keys.length - 1)) {
+            keysParams += " OR";
+        }
+    }
+    return [keysParams, elements];
+}
+
+function sqlInsertMake(_obj) {
+    var keysParams = "(";
+    var params = "(";
+    var elements = [];
+
+    var keys = Object.keys(_obj);
+    for(var i = 0 ; i < keys.length; i++) {
+        keysParams += "`"+keys[i]+"`";
+        params += "?" ;
+        elements.push(_obj[keys[i]]);
+        if(i != (keys.length - 1)) {
+            keysParams += ","
+            params +=","
+        }
+    }
+    keysParams+=")";
+    params+=")";
+    return [keysParams, params, elements];
+}
+
+function sqlUpdateMake(_obj, _pk) {
+    var keysParams = "";
+    var whereParams = "`"+_pk+"`=?";
+    var elements = [];
+    var keys = Object.keys(_obj);
+    for(let i = 0 ; i < keys.length ; i++) {
+        if(keys[i] == _pk) continue;
+        keysParams += " `"+keys[i] + "`=?";
+        elements.push(_obj[keys[i]]);
+        if(i != (keys.length -1)) {
+            keysParams +=",";
+        }
+    }
+    elements.push(_obj[_pk]);
+    return [keysParams, whereParams, elements];
+}
+
+function sqlProcedureMake(_obj) {
+    var keysParams = "(";
+    var elements = [];
+    var keys = Object.keys(_obj);
+    for(let i = 0 ; i < keys.length ; i++) {
+        if(keys[i] == 'id') continue;
+        keysParams += " ?";
+        elements.push(_obj[keys[i]]);
+        if(i != (keys.length -1)) {
+            keysParams +=",";
+        }
+    }
+    keysParams +=")";
+    return [keysParams,elements];
+}
+
+exports.Add = function(_table, _obj, callback) {
+    try{
+        var arr_params = sqlInsertMake(_obj);
+        let sqlText="INSERT INTO "+ _table + arr_params[0] + " VALUES " + arr_params[1] + ";";
+        let params = arr_params[2];
+        var conn = getDbConnection();
+        conn.connect(function(err){
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(sqlText);
+            conn.query(sqlText, params, function(err, rows) {
+                if(err) throw err;
+                if(typeof callback == 'function') {
+                    callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            });
+        });
+    }catch(err) {console.log(err);}
+}
+
+exports.Get = function(_table, _obj, callback) {
+    try {
+        var arr_params = sqlWhereMake(_obj);
+        let sqlText ="SELECT * FROM " + _table + " WHERE " + arr_params[0] +";";
+        var params = arr_params[1];
+        var conn = getDbConnection();
+        conn.connect(function(err) {
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(sqlText);
+            conn.query(sqlText, params, function(err, rows){
+                if(err) throw err;
+                if(typeof callback == 'function') {
+                    callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            });
+        });
+    }catch(err) {console.log(err);}
+}
+
+exports.GetOr = function(_table, _obj, callback) {
+    try {
+        var arr_params = sqlWhereMake2(_obj);
+        let sqlText ="SELECT * FROM " + _table + " WHERE " + arr_params[0] +";";
+        var params = arr_params[1];
+        var conn = getDbConnection();
+        conn.connect(function(err) {
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(sqlText);
+            conn.query(sqlText, params, function(err, rows){
+                if(err) throw err;
+                if(typeof callback == 'function') {
+                    callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            });
+        });
+    }catch(err) {console.log(err);}
+}
+
+exports.Getall = function(_table, callback) {
+    try {
+        let sqlText ="SELECT * FROM " + _table + ";";
+        var conn = getDbConnection();
+        conn.connect(function(err) {
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(sqlText);
+            conn.query(sqlText, function(err, rows){
+                if(err) throw err;;
+                if(typeof callback == 'function') {
+                    callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            });
+        });
+    }catch(err) {console.log(err);}
+}
+
+exports.Update = function(_table, _obj, _pk, callback) {
+    try {
+        var arr_params = sqlUpdateMake(_obj, _pk);
+        let sqlText = "UPDATE " + _table + " SET " + arr_params[0] + " WHERE " + arr_params[1] + ";";
+        let params = arr_params[2];
+        var conn = getDbConnection();
+        conn.connect(function(err) {
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(sqlText);
+            conn.query(sqlText, params, function(err, rows){
+                if(err) throw err;
+                if(typeof callback == 'function') {
+                    callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            });
+        });
+    }catch(err) {console.log(err);}
+}
+
+exports.Call = function(_procedure, _obj, callback) {
+    try {
+        var arr_params = sqlProcedureMake(_obj);
+        let sqlText = "Call " + _procedure + arr_params[0]+";";
+        let params = arr_params[1];
+        var conn = getDbConnection();
+        conn.connect(function(err) {
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(sqlText);
+            console.log(params);
+            conn.query(sqlText, params, function(err, rows) {
+                if(err) throw err;
+                if(typeof callback == 'function') {
+                    callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            });
+        });
+    }catch(err) {console.log(err);}
+}
+
+
+
+
+exports.Exec = function(_sqlText, _params, _callback) {
+    try{
+        var conn = getDbConnection();
+        conn.connect(function(err){
+            if(err) throw err;
+            console.log("=========DB Connection=========");
+            console.log(_sqlText);
+            conn.query(_sqlText, _params, function(err, rows){
+                if(err) throw err;
+                if(typeof _callback == 'function') {
+                    _callback(rows);
+                }
+                conn.end();
+                console.log("=========DB DisConnection======");
+            })
+        })
+    }catch(err){console.log(err);}
+}
